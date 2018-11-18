@@ -22,13 +22,16 @@ type DBElement struct {
 }
 
 const coll = "abcdefghijklmnopqrstuvwxyz*"
-const dbURL = "mongodb://127.0.0.1"
+const dbURL = "mongodb://gosearch:recv12@ds211504.mlab.com:11504/gosearch-db"
+
+//const dbURL = "mongodb://127.0.0.1"
 
 var session *mgo.Session
 var collections = make([]*mgo.Collection, 27)
 
 func init() {
 	fmt.Println("Opening database connection...")
+	fmt.Println("Connecting to", dbURL)
 	session, err := mgo.Dial(dbURL)
 	if err != nil {
 		panic(err)
@@ -37,7 +40,7 @@ func init() {
 	}
 
 	session.SetMode(mgo.Monotonic, true)
-	database := session.DB("index")
+	database := session.DB("gosearch-db")
 
 	for i := range coll {
 		collName := string(coll[i])
@@ -98,6 +101,7 @@ func NewCrawlReq(timeout int, maxurls int, maxdist int, restrict string, urls st
 // StartCrawling starts a new crawl session with a specific configuration
 func StartCrawling(config crawlit.CrawlConfig) {
 
+	fmt.Println("[INDEXER] Start crawling", config.SeedURLs)
 	c := crawlit.NewCrawler()
 	index := make(map[string][]string)
 	c.Crawl(config, func(res crawlit.CrawlitResponse) error {
@@ -109,11 +113,12 @@ func StartCrawling(config crawlit.CrawlConfig) {
 		return nil
 	})
 	c.Result()
+	fmt.Println("[INDEXER] Done crawling", config.SeedURLs)
 
-	var stored DBElement
 	for keyword, urls := range index {
 		collID := getCollectionIndex(keyword)
 
+		var stored DBElement
 		err := collections[collID].Find(bson.M{"keyword": keyword}).One(&stored)
 		if err != nil {
 			fmt.Println("Couldn't find", keyword, "in index")
