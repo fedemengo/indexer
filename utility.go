@@ -4,33 +4,23 @@ import (
 	"strings"
 )
 
-var special = map[rune]bool{
-	'\\': true,
-	'!':  true,
-	'"':  true,
-	'£':  true,
-	'$':  true,
-	'%':  true,
-	'^':  true,
-	'~':  true,
-	'#':  true,
-	'<':  true,
-	'>':  true,
-	']':  true,
-	'}':  true,
-	'-':  true,
-	'1':  true,
-	'2':  true,
-	'3':  true,
-	'4':  true,
-	'5':  true,
-	'6':  true,
-	'7':  true,
-	'8':  true,
-	'9':  true,
-	'0':  true,
+// SPECIAL represent all characters that should be ignored
+var SPECIAL = map[rune]bool{
+	'\\': true, '!': true,
+	'"': true, '£': true,
+	'$': true, '%': true,
+	'^': true, '~': true,
+	'#': true, '<': true,
+	'>': true, ']': true,
+	'}': true, '-': true,
+	'1': true, '2': true,
+	'3': true, '4': true,
+	'5': true, '6': true,
+	'7': true, '8': true,
+	'9': true, '0': true,
 }
 
+// ExtractKeywords receive a plain string and extract "relevant" keyword
 func ExtractKeywords(text string) []string {
 	uniqueW := make(map[string]bool)
 	words := strings.Split(text, " ")
@@ -46,6 +36,7 @@ func ExtractKeywords(text string) []string {
 	return result
 }
 
+// ExtractURLs receive a string of seed urls and create a slice of url
 func ExtractURLs(urls string) []string {
 	tmp := strings.FieldsFunc(urls, func(r rune) bool {
 		return r == ',' || r == ' ' || r == '\n'
@@ -67,7 +58,7 @@ func isWordValid(word string) (ok bool) {
 	}
 
 	for _, char := range word {
-		if _, ok := special[char]; ok {
+		if _, ok := SPECIAL[char]; ok {
 			return false
 		}
 	}
