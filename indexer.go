@@ -21,10 +21,12 @@ type DBElement struct {
 	URLs    []string
 }
 
-const coll = "abcdefghijklmnopqrstuvwxyz*"
-const dbURL = "mongodb://gosearch:recv12@ds211504.mlab.com:11504/gosearch-db"
+type multipleKeywordHandler func(curr, next []ResponseData) []ResponseData
 
-//const dbURL = "mongodb://127.0.0.1"
+const coll = "abcdefghijklmnopqrstuvwxyz*"
+
+//const dbURL = "mongodb://gosearch:recv12@ds211504.mlab.com:11504/gosearch-db"
+const dbURL = "mongodb://127.0.0.1"
 
 var session *mgo.Session
 var collections = make([]*mgo.Collection, 27)
@@ -59,21 +61,74 @@ func GetData(keywords []string) []ResponseData {
 	var result []ResponseData
 	var stored DBElement
 
+	handle := andHandler
+
 	for _, k := range keywords {
+		if k == "or" {
+			handle = orHandler
+			continue
+		} else if k == "and" {
+			handle = andHandler
+			continue
+		}
+
 		collID := getCollectionIndex(k)
+		fmt.Println("search", k)
 		err := collections[collID].Find(bson.M{"keyword": k}).One(&stored)
 		if err != nil {
 			fmt.Println("Couldn't find", keywords, "in index")
 			continue
 		}
+
+		var data []ResponseData
 		for _, url := range stored.URLs {
-			result = append(result, ResponseData{URL: url, Name: url})
+			data = append(data, ResponseData{URL: url, Name: url})
 		}
+
+		fmt.Println(data)
+		result = handle(result, data)
 	}
 
 	// Here could be a good point for ranking the results
 
 	return result
+}
+
+func orHandler(curr, next []ResponseData) []ResponseData {
+	return append(curr, next...)
+}
+
+func andHandler(curr, next []ResponseData) []ResponseData {
+	if len(next) == 0 {
+		return curr
+	}
+
+	if len(curr) == 0 {
+		return next
+	}
+
+	var res []ResponseData
+	data1 := make(map[string]bool)
+	data2 := make(map[string]bool)
+	union := make(map[ResponseData]bool)
+
+	for _, w := range curr {
+		data1[w.URL] = true
+		union[w] = true
+	}
+
+	for _, w := range next {
+		data2[w.URL] = true
+		union[w] = true
+	}
+
+	for w := range union {
+		if data1[w.URL] && data2[w.URL] {
+			res = append(res, w)
+		}
+	}
+
+	return res
 }
 
 func getCollectionIndex(x string) int {
@@ -86,8 +141,10 @@ func getCollectionIndex(x string) int {
 
 // NewCrawlReq start a new crawling session
 func NewCrawlReq(timeout int, maxurls int, maxdist int, restrict string, urls string) {
-	isRestrict := (restrict == "true")
+	isRestrict := (restrict == "on")
 	seedURLs := ExtractURLs(urls)
+
+	fmt.Println("[API]", timeout, maxurls, maxdist, isRestrict, seedURLs)
 
 	go StartCrawling(crawlit.CrawlConfig{
 		SeedURLs:    seedURLs,
@@ -105,7 +162,7 @@ func StartCrawling(config crawlit.CrawlConfig) {
 	c := crawlit.NewCrawler()
 	index := make(map[string][]string)
 	c.Crawl(config, func(res crawlit.CrawlitResponse) error {
-		keywords := ExtractKeywords(res.Body.Text())
+		keywords := ExtractKeywords(res.Body.Text(), 4)
 
 		for _, keyword := range keywords {
 			index[keyword] = append(index[keyword], res.URL)
@@ -120,17 +177,24 @@ func StartCrawling(config crawlit.CrawlConfig) {
 
 		var stored DBElement
 		err := collections[collID].Find(bson.M{"keyword": keyword}).One(&stored)
-		if err != nil {
-			fmt.Println("Couldn't find", keyword, "in index")
+		if err == mgo.ErrNotFound {
+			//fmt.Println("Couldn't find", keyword, "in index")
+			err = collections[collID].Remove(bson.M{"keyword": keyword})
+			if err != nil {
+				//fmt.Println("Couldn't remove", keyword, "from index")
+			}
 		}
 
 		if len(stored.URLs) > 0 {
-			urls = append(stored.URLs, urls...)
+			urls = merge(stored.URLs, urls)
 		}
 
 		err = collections[collID].Insert(&DBElement{Keyword: keyword, URLs: urls})
 		if err != nil {
 			fmt.Println("Couldn't insert", keyword, "in index")
+		} else {
+			fmt.Println("Inserting", keyword, "in index")
 		}
 	}
+	fmt.Println("[INDEXER] Done inserting", config.SeedURLs)
 }
